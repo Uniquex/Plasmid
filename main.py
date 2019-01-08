@@ -12,7 +12,6 @@ import json as jsson
 import time
 
 
-
 class SomeObject(object):
     pass
 
@@ -81,14 +80,16 @@ def getSystemValues():
     return json_body
 
 
-def getServerValues():
-    now = datetime.utcnow()
+
+
+
+def getServerValues(now):
 
     print(now.utcnow())
 
     x = psutil.virtual_memory()
 
-    #print(x.percent)
+    # print(x.percent)
 
     json_body = [
         {
@@ -110,9 +111,7 @@ def getServerValues():
     return json_body
 
 
-def getNetworkValues():
-    now = datetime.utcnow()
-
+def getNetworkValues(now):
     net = psutil.net_io_counters()
 
     # TODO get adaptor dynamically
@@ -137,7 +136,8 @@ def getNetworkValues():
 
     return json_body
 
-def insertUtilizationValues() :
+
+def insertUtilizationValues():
     client = InfluxDBClient('192.168.31.103', 8086, 'root', 'root')
     dbName = "RPI"
 
@@ -147,30 +147,84 @@ def insertUtilizationValues() :
         print("no connection to DB")
         exit(-1)
 
+    jsons = []
     client.switch_database(dbName)
+    now = datetime.utcnow()
 
-    json = getServerValues()
+    jsons.append(getServerValues(now))
+    jsons.append(getNetworkValues(now))
 
-    print("Write points: {0}".format(json))
-    client.write_points(json)
+    for js in jsons:
+        client.write_points(js)
 
-    # query = "SELECT * FROM " + dbName + ".autogen.cpu_load_short"
-    # result = client.query(query)
-    # print("Result: {0}".format(result))
-
-    json = getNetworkValues()
-    print("Write points: {0}".format(json))
-    client.write_points(json)
-
-    # json = getSystemValues()
-    # print("Write points: {0}".format(json))
-    # client.write_points(json)
+    writeProcessValues(client, now)
 
 
+def writeProcessValues(client, now):
+    plist = psutil.pids()
+    for x in plist:
+        proc = psutil.Process(x)
+        pname = proc.name()
+        pmem = proc.memory_info().vms
+        pcpu = proc.cpu_times().system
+
+        json_body = [
+            {
+                "measurement": "process_list",
+                "tags": {
+                    "host": socket.gethostname(),
+                },
+                "time": now.isoformat(),
+                "fields": {
+                    'procId': x,
+                    'pName': pname,
+                    'pMemory': pmem,
+                    'pCPU': pcpu
+
+                }
+            }
+        ]
+
+        print("Write points: {0}".format(json_body))
+        client.write_points(json_body)
+
+
+def getProcessValues(now):
+    plist = psutil.pids()
+    jar = []
+    for x in plist:
+        proc = psutil.Process(x)
+        pname = proc.name()
+        pmem = proc.memory_info().vms
+        pcpu = proc.cpu_times().system
+
+        jar.append({'procId': x,
+                    'pName': pname,
+                    'pMemory': pmem,
+                    'pCPU': pcpu})
+
+    json = jsson.dumps(jar)
+
+    json_body = [
+        {
+            "measurement": "process_list",
+            "tags": {
+                "host": socket.gethostname(),
+                "adaptor": "eth0"
+            },
+            "time": now.isoformat(),
+            "fields": {
+                jar
+            }
+        }
+    ]
+
+    return json_body
 
 
 if __name__ == '__main__':
     while True:
         insertUtilizationValues()
         time.sleep(10)
+
 pass
