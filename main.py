@@ -163,9 +163,10 @@ def insertUtilizationValues():
 def writeProcessValues(client, now):
     plist = psutil.pids()
     for x in plist:
+        # TODO catch psutil._exceptions.NoSuchProcess
         proc = psutil.Process(x)
         pname = proc.name()
-        pmem = proc.memory_info().vms
+        pmem = float("{0:.2f}".format(proc.memory_percent()))
         pcpu = proc.cpu_times().system
 
         json_body = [
@@ -173,11 +174,11 @@ def writeProcessValues(client, now):
                 "measurement": "process_list",
                 "tags": {
                     "host": socket.gethostname(),
+                    'pName': pname
                 },
                 "time": now.isoformat(),
                 "fields": {
                     'procId': x,
-                    'pName': pname,
                     'pMemory': pmem,
                     'pCPU': pcpu
 
@@ -187,39 +188,6 @@ def writeProcessValues(client, now):
 
         print("Write points: {0}".format(json_body))
         client.write_points(json_body)
-
-
-def getProcessValues(now):
-    plist = psutil.pids()
-    jar = []
-    for x in plist:
-        proc = psutil.Process(x)
-        pname = proc.name()
-        pmem = proc.memory_info().vms
-        pcpu = proc.cpu_times().system
-
-        jar.append({'procId': x,
-                    'pName': pname,
-                    'pMemory': pmem,
-                    'pCPU': pcpu})
-
-    json = jsson.dumps(jar)
-
-    json_body = [
-        {
-            "measurement": "process_list",
-            "tags": {
-                "host": socket.gethostname(),
-                "adaptor": "eth0"
-            },
-            "time": now.isoformat(),
-            "fields": {
-                jar
-            }
-        }
-    ]
-
-    return json_body
 
 
 if __name__ == '__main__':
