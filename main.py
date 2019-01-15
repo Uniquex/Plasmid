@@ -162,32 +162,38 @@ def insertUtilizationValues():
 
 def writeProcessValues(client, now):
     plist = psutil.pids()
+    print(now.isoformat() + '  Writing to DB')
     for x in plist:
         # TODO catch psutil._exceptions.NoSuchProcess
-        proc = psutil.Process(x)
-        pname = proc.name()
-        pmem = float("{0:.2f}".format(proc.memory_percent()))
-        pcpu = proc.cpu_times().system
+        try:
+            proc = psutil.Process(x)
+            pname = proc.name()
+            pmem = float("{0:.2f}".format(proc.memory_percent()))
+            pcpu = proc.cpu_times().system
 
-        json_body = [
-            {
-                "measurement": "process_list",
-                "tags": {
-                    "host": socket.gethostname(),
-                    'pName': pname
-                },
-                "time": now.isoformat(),
-                "fields": {
-                    'procId': x,
-                    'pMemory': pmem,
-                    'pCPU': pcpu
+            json_body = [
+                {
+                    "measurement": "process_list",
+                    "tags": {
+                        "host": socket.gethostname(),
+                        'pName': pname
+                    },
+                    "time": now.isoformat(),
+                    "fields": {
+                        'procId': x,
+                        'pMemory': pmem,
+                        'pCPU': pcpu
 
+                    }
                 }
-            }
-        ]
+            ]
 
-        print("Write points: {0}".format(json_body))
-        client.write_points(json_body)
+            # print("Write points: {0}".format(json_body))
+            client.write_points(json_body)
+
+        except psutil.NoSuchProcess:
+            print('Process not found')
+
 
 
 if __name__ == '__main__':
