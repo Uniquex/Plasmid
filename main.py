@@ -12,10 +12,6 @@ import json as jsson
 import time
 
 
-class SomeObject(object):
-    pass
-
-
 def disksinfo():
     values = []
     disk_partitions = psutil.disk_partitions(all=False)
@@ -48,6 +44,8 @@ def getCPUDetails():
         values.append(core)
 
     return jsson.dumps(values)
+
+
 
 
 def getSystemValues():
@@ -85,7 +83,7 @@ def getSystemValues():
 
 def getServerValues(now):
 
-    print(now.utcnow())
+    print('Getting utilization values')
 
     x = psutil.virtual_memory()
 
@@ -158,11 +156,12 @@ def insertUtilizationValues():
         client.write_points(js)
 
     writeProcessValues(client, now)
+    writeServerDetails(client, now)
 
 
 def writeProcessValues(client, now):
     plist = psutil.pids()
-    print(now.isoformat() + '  Writing to DB')
+    print('Writing to DB')
     for x in plist:
         # TODO catch psutil._exceptions.NoSuchProcess
         try:
@@ -194,11 +193,43 @@ def writeProcessValues(client, now):
         except psutil.NoSuchProcess:
             print('Process not found')
 
+def writeServerDetails(client, now):
 
+    query = "SELECT * FROM RPI.autogen.server WHERE host =\'" + socket.gethostname() + "\' order by desc limit 1"
+    result = client.query(query)
+
+    if len(result) == 0:
+        obj_Disk = psutil.disk_usage('/')
+
+        json_body = [
+            {
+                "measurement": "server",
+                "tags": {
+                    "host": socket.gethostname(),
+                    "region": "uk"
+                },
+                "time": now.isoformat(),
+                "fields": {
+                    "CPU_Cores": psutil.cpu_count(),
+                    'CPU_Freq': psutil.cpu_freq(percpu=False).max,
+                    "Memory": psutil.virtual_memory().total / (1024.0 ** 3),
+                    "Disk_total": float("{0:.2f}".format(obj_Disk.total / (1024.0 ** 3))),
+                    "Disk_free": float("{0:.2f}".format(obj_Disk.free / (1024.0 ** 3))),
+                    "Disk_used": float("{0:.2f}".format(obj_Disk.used / (1024.0 ** 3))),
+                    "Disk_percent": obj_Disk.percent
+                }
+            }
+        ]
+
+        client.write_points(json_body)
+        print('wrote server details to db')
+    else:
+        print("server values already exist")
 
 if __name__ == '__main__':
+
     while True:
         insertUtilizationValues()
-        time.sleep(10)
+        time.sleep(60)
 
 pass
