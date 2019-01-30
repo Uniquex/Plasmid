@@ -10,7 +10,7 @@ import platform
 import os
 import json as jsson
 import time
-
+import pymongo
 
 def disksinfo():
     values = []
@@ -193,8 +193,10 @@ def writeProcessValues(client, now):
         except psutil.NoSuchProcess:
             print('Process not found')
 
-def writeServerDetails(client, now):
+        pass
 
+
+def writeServerDetails(client, now):
     query = "SELECT * FROM RPI.autogen.server WHERE host =\'" + socket.gethostname() + "\' order by desc limit 1"
     result = client.query(query)
 
@@ -226,10 +228,36 @@ def writeServerDetails(client, now):
     else:
         print("server values already exist")
 
-if __name__ == '__main__':
+    pass
 
+
+def writeServerDetailsToMongoDB():
+    client = pymongo.MongoClient('192.168.31.103', 27017)
+    db = client.plasmid
+    collection = db.servers
+
+    if collection.find({'host': socket.gethostname()}):
+        obj_Disk = psutil.disk_usage('/')
+        json_body = {"host": socket.gethostname(),
+                        "timestamp": time.time(),
+                        "cpu_cores": psutil.cpu_count(),
+                        'cpu_freq': psutil.cpu_freq(percpu=False).max,
+                        "memory": float("{0:.2f}".format(psutil.virtual_memory().total / (1024.0 ** 3))),
+                        "disk_total": float("{0:.2f}".format(obj_Disk.total / (1024.0 ** 3))),
+                        "disk_free": float("{0:.2f}".format(obj_Disk.free / (1024.0 ** 3))),
+                        "disk_used": float("{0:.2f}".format(obj_Disk.used / (1024.0 ** 3))),
+                        "disk_percent": obj_Disk.percent}
+
+        collection.insert_one(json_body)
+        print('wrote server details to db')
+
+    pass
+
+if __name__ == '__main__':
+    writeServerDetailsToMongoDB()
     while True:
         insertUtilizationValues()
         time.sleep(60)
+
 
 pass

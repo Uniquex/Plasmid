@@ -1,40 +1,29 @@
 #!/usr/bin/env python
-
-from __future__ import print_function
-from influxdb import InfluxDBClient
-from requests.exceptions import ConnectionError
-import psutil
-import socket
-import datetime
+from flask import Flask
+from flask_restful import Api, Resource, reqparse
+from MongoCon import MongoCon
 
 
-def getCPUvalues():
+app = Flask(__name__)
+api = Api(app)
+db = MongoCon()
 
-    pass
 
+class Server(Resource):
+
+    def get(self, servername):
+        return db.getServer(servername)
+        pass
+
+
+class Test(Resource):
+
+    def get(self):
+        return {"test": 3023, "xy": "xykd"}
 
 
 if __name__ == '__main__':
-    client = InfluxDBClient('192.168.31.103', 8086, 'root', 'root')
-    dbName = "RPI"
+    api.add_resource(Server, "/server/<servername>")
+    api.add_resource(Test, "/test")
 
-    try:
-        client.create_database(dbName)
-    except ConnectionError:
-        print("no connection to DB")
-        exit(-1)
-
-    client.switch_database(dbName)
-
-    json = getCPUvalues()
-
-    print("Write points: {0}".format(json))
-    client.write_points(json)
-
-    query = "SELECT * FROM " + dbName + ".autogen.cpu_load_short"
-    result = client.query(query)
-    print(query)
-    print("Result: {0}".format(result))
-
-
-
+    app.run(host='0.0.0.0',debug=True)
