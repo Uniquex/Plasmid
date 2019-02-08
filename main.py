@@ -11,6 +11,7 @@ import os
 import json as jsson
 import time
 import pymongo
+import thread
 
 def disksinfo():
     values = []
@@ -163,7 +164,6 @@ def writeProcessValues(client, now):
     plist = psutil.pids()
     print('Writing to DB')
     for x in plist:
-        # TODO catch psutil._exceptions.NoSuchProcess
         try:
             proc = psutil.Process(x)
             pname = proc.name()
@@ -201,8 +201,6 @@ def writeServerDetails(client, now):
     result = client.query(query)
 
     if len(result) == 0:
-        obj_Disk = psutil.disk_usage('/')
-
         json_body = [
             {
                 "measurement": "server",
@@ -210,16 +208,7 @@ def writeServerDetails(client, now):
                     "host": socket.gethostname(),
                     "region": "uk"
                 },
-                "time": now.isoformat(),
-                "fields": {
-                    "CPU_Cores": psutil.cpu_count(),
-                    'CPU_Freq': psutil.cpu_freq(percpu=False).max,
-                    "Memory": psutil.virtual_memory().total / (1024.0 ** 3),
-                    "Disk_total": float("{0:.2f}".format(obj_Disk.total / (1024.0 ** 3))),
-                    "Disk_free": float("{0:.2f}".format(obj_Disk.free / (1024.0 ** 3))),
-                    "Disk_used": float("{0:.2f}".format(obj_Disk.used / (1024.0 ** 3))),
-                    "Disk_percent": obj_Disk.percent
-                }
+                "time": now.isoformat()
             }
         ]
 
@@ -230,34 +219,81 @@ def writeServerDetails(client, now):
 
     pass
 
+def getServerDetailsJson():
+    network = psutil.net_if_addrs()
+    interface = []
+    json = jsson.dumps(network)
+    for attr, value in network.items():
+        interface.append({attr: value})
+
+    disks = psutil.disk_partitions()
+    disks_formatted = []
+
+    for disk in disks:
+        disks_formatted.append({"name": disk[1], "fstype": disk.fstype})
+
+    obj_Disk = psutil.disk_usage('/')
+    json_body = {"host": socket.gethostname(),
+                 "timestamp": time.time(),
+                 "system": {
+                     "system": platform.system(),
+                     "release": platform.release(),
+                     "machine": platform.machine(),
+                     "version": platform.version()
+                 },
+                 "cpu": {
+                     "cpu_cores": psutil.cpu_count(),
+                     'cpu_freq': psutil.cpu_freq(percpu=False).max,
+                     'cpu_load': psutil.cpu_percent(),
+                     'cpu_temp': psutil.sensors_temperatures(fahrenheit=False)["cpu-thermal"][0][1]
+                 },
+                 "memory": {
+                     "memory_size": float("{0:.2f}".format(psutil.virtual_memory().total / (1024.0 ** 3))),
+                     "memory_load": psutil.virtual_memory()[2]
+                 },
+                 "disk": {
+                     "disk_total": float("{0:.2f}".format(obj_Disk.total / (1024.0 ** 3))),
+                     "disk_free": float("{0:.2f}".format(obj_Disk.free / (1024.0 ** 3))),
+                     "disk_used": float("{0:.2f}".format(obj_Disk.used / (1024.0 ** 3))),
+                     "disk_percent": obj_Disk.percent
+                 },
+                 "network": network}
+
+    return json_body
 
 def writeServerDetailsToMongoDB():
     client = pymongo.MongoClient('192.168.31.103', 27017)
     db = client.plasmid
     collection = db.servers
 
-    if collection.find({'host': socket.gethostname()}):
-        obj_Disk = psutil.disk_usage('/')
-        json_body = {"host": socket.gethostname(),
-                        "timestamp": time.time(),
-                        "cpu_cores": psutil.cpu_count(),
-                        'cpu_freq': psutil.cpu_freq(percpu=False).max,
-                        "memory": float("{0:.2f}".format(psutil.virtual_memory().total / (1024.0 ** 3))),
-                        "disk_total": float("{0:.2f}".format(obj_Disk.total / (1024.0 ** 3))),
-                        "disk_free": float("{0:.2f}".format(obj_Disk.free / (1024.0 ** 3))),
-                        "disk_used": float("{0:.2f}".format(obj_Disk.used / (1024.0 ** 3))),
-                        "disk_percent": obj_Disk.percent}
+    doc = collection.find({'host': socket.gethostname()})
 
-        collection.insert_one(json_body)
-        print('wrote server details to db')
+    if doc.count() == 0:
+
+        collection.insert(getServerDetailsJson())
+
+    elif doc.count() > 0:
+        collection.update({'_id': doc[0]['_id']}, {"$set": getServerDetailsJson()})
+
+    else:
+        print('could not write server details to db')
 
     pass
+
+def influxLooper(cycle):
+    while True:
+        insertUtilizationValues()
+        time.sleep(cycle)
+
+def mongoLooper(cycle):
+    while True:
+        writeServerDetailsToMongoDB()
+        time.sleep(cycle)
+
 
 if __name__ == '__main__':
     writeServerDetailsToMongoDB()
     while True:
-        insertUtilizationValues()
-        time.sleep(60)
+        thread.start_new_thread(influxLooper(120), "InfluxThread")
+        thread.start_new_thread(mongoLooper(600), "MongoThread")
 
-
-pass
