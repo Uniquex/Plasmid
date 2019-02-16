@@ -144,7 +144,7 @@ def insertUtilizationValues():
         client.create_database(dbName)
     except ConnectionError:
         print("no connection to DB")
-        exit(-1)
+        # exit(-1)
 
     jsons = []
     client.switch_database(dbName)
@@ -262,23 +262,26 @@ def getServerDetailsJson():
     return json_body
 
 def writeServerDetailsToMongoDB():
-    client = pymongo.MongoClient('192.168.31.103', 27017)
-    db = client.plasmid
-    collection = db.servers
+    try:
+        client = pymongo.MongoClient('192.168.31.103', 27017)
+        db = client.plasmid
+        collection = db.servers
 
-    doc = collection.find({'host': socket.gethostname()})
+        doc = collection.find({'host': socket.gethostname()})
 
-    if doc.count() == 0:
+        if doc.count() == 0:
 
-        collection.insert(getServerDetailsJson())
+            collection.insert(getServerDetailsJson())
 
-    elif doc.count() > 0:
-        collection.update({'_id': doc[0]['_id']}, {"$set": getServerDetailsJson()})
+        elif doc.count() > 0:
+            collection.update({'_id': doc[0]['_id']}, {"$set": getServerDetailsJson()})
 
-    else:
-        print('could not write server details to db')
+        else:
+            print('could not write server details to db')
 
-    pass
+    except Exception:
+        print("No connection to MongoDB")
+
 
 def influxLooper(cycle):
     while True:
@@ -292,8 +295,6 @@ def mongoLooper(cycle):
 
 
 if __name__ == '__main__':
-    writeServerDetailsToMongoDB()
-    while True:
-        thread.start_new_thread(influxLooper(120), "InfluxThread")
-        thread.start_new_thread(mongoLooper(600), "MongoThread")
+        thread1 = thread.start_new_thread(influxLooper(60), "InfluxThread")
+        thread2 = thread.start_new_thread(mongoLooper(600), "MongoThread")
 
