@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+
+import traceback
+
 from influxdb import InfluxDBClient
 from requests.exceptions import ConnectionError
 import psutil
@@ -237,6 +240,15 @@ def getServerDetailsJson():
     for disk in disks:
         disks_formatted.append({"name": disk[1], "fstype": disk.fstype})
 
+    sensors = []
+    for x in psutil.sensors_temperatures():
+        sensors.append(psutil.sensors_temperatures(fahrenheit=False)[x][0][1])
+    avgtemp = 0
+    for s in sensors:
+        avgtemp += s
+
+    avgtemp = avgtemp/sensors.__len__()
+
     obj_Disk = psutil.disk_usage('/')
     json_body = {"host": socket.gethostname(),
                  "timestamp": time.time(),
@@ -250,7 +262,7 @@ def getServerDetailsJson():
                      "cpu_cores": psutil.cpu_count(),
                      'cpu_freq': psutil.cpu_freq(percpu=False).max,
                      'cpu_load': psutil.cpu_percent(),
-                     'cpu_temp': psutil.sensors_temperatures(fahrenheit=False)["cpu-thermal"][0][1]
+                     'cpu_temp': avgtemp
                  },
                  "memory": {
                      "memory_size": float("{0:.2f}".format(psutil.virtual_memory().total / (1024.0 ** 3))),
@@ -286,6 +298,7 @@ def writeServerDetailsToMongoDB():
             print('could not write server details to db')
 
     except Exception:
+        print(traceback.format_exc())
         print("No connection to MongoDB")
 
 
