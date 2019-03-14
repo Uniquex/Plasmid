@@ -199,9 +199,9 @@ def writeProcessValues(client, now):
 
         except psutil.NoSuchProcess:
             print('Process not found')
-        except InfluxDBClient.exceptions.InfluxDBClientError:
+        except Exception:
             print('InfluxDB error')
-
+            print(traceback.format_exc())
 
 def writeServerDetails(client, now):
     query = "SELECT * FROM RPI.autogen.server WHERE host =\'" + socket.gethostname() + "\' order by desc limit 1"
