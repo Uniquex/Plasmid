@@ -302,23 +302,12 @@ def writeServerDetailsToMongoDB():
         print("No connection to MongoDB")
 
 
-def influxLooper(cycle):
+def looper(cycle):
     while True:
         insertUtilizationValues()
         time.sleep(cycle)
-
-
-def mongoLooper(cycle):
-    while True:
         writeServerDetailsToMongoDB()
         time.sleep(cycle)
 
-
 if __name__ == '__main__':
-
-    threads = [
-        Thread(target=mongoLooper(600)),
-        Thread(target=influxLooper(60))
-    ]
-    for i in threads:
-        i.start()
+  Thread(target=looper(60)).start()
