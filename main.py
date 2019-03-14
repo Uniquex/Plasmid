@@ -11,7 +11,8 @@ import os
 import json as jsson
 import time
 import pymongo
-import thread
+from threading import Thread
+
 
 def disksinfo():
     values = []
@@ -47,8 +48,6 @@ def getCPUDetails():
     return jsson.dumps(values)
 
 
-
-
 def getSystemValues():
     now = datetime.utcnow()
 
@@ -79,11 +78,7 @@ def getSystemValues():
     return json_body
 
 
-
-
-
 def getServerValues(now):
-
     print('Getting utilization values')
 
     x = psutil.virtual_memory()
@@ -138,7 +133,11 @@ def getNetworkValues(now):
 
 def insertUtilizationValues():
     client = InfluxDBClient('192.168.31.103', 8086, 'root', 'root')
+    client2 = InfluxDBClient('192.168.31.103', 8086, 'root', 'root')
     dbName = "RPI"
+    dbName2 = "RPI_Process"
+
+    now = datetime.utcnow()
 
     try:
         client.create_database(dbName)
@@ -146,9 +145,15 @@ def insertUtilizationValues():
         print("no connection to DB")
         # exit(-1)
 
+    try:
+        client2.create_database(dbName2)
+        client2.switch_database(dbName2)
+        writeProcessValues(client2, now)
+    except ConnectionError:
+        print("no connection to DB")
+
     jsons = []
     client.switch_database(dbName)
-    now = datetime.utcnow()
 
     jsons.append(getServerValues(now))
     jsons.append(getNetworkValues(now))
@@ -156,26 +161,26 @@ def insertUtilizationValues():
     for js in jsons:
         client.write_points(js)
 
-    writeProcessValues(client, now)
     writeServerDetails(client, now)
 
 
 def writeProcessValues(client, now):
     plist = psutil.pids()
     print('Writing to DB')
+
     for x in plist:
         try:
             proc = psutil.Process(x)
             pname = proc.name()
             pmem = float("{0:.2f}".format(proc.memory_percent()))
-            pcpu = proc.cpu_times().system
+            pcpu = proc.cpu_percent()
 
             json_body = [
                 {
                     "measurement": "process_list",
                     "tags": {
                         "host": socket.gethostname(),
-                        'pName': pname
+                        'pName': pname,
                     },
                     "time": now.isoformat(),
                     "fields": {
@@ -187,13 +192,12 @@ def writeProcessValues(client, now):
                 }
             ]
 
-            # print("Write points: {0}".format(json_body))
-            client.write_points(json_body)
+            client.write_points(retention_policy="rp1", points=json_body)
 
         except psutil.NoSuchProcess:
             print('Process not found')
-
-        pass
+        except InfluxDBClient.exceptions.InfluxDBClientError:
+            print('InfluxDB error')
 
 
 def writeServerDetails(client, now):
@@ -218,6 +222,7 @@ def writeServerDetails(client, now):
         print("server values already exist")
 
     pass
+
 
 def getServerDetailsJson():
     network = psutil.net_if_addrs()
@@ -261,6 +266,7 @@ def getServerDetailsJson():
 
     return json_body
 
+
 def writeServerDetailsToMongoDB():
     try:
         client = pymongo.MongoClient('192.168.31.103', 27017)
@@ -288,6 +294,7 @@ def influxLooper(cycle):
         insertUtilizationValues()
         time.sleep(cycle)
 
+
 def mongoLooper(cycle):
     while True:
         writeServerDetailsToMongoDB()
@@ -295,6 +302,10 @@ def mongoLooper(cycle):
 
 
 if __name__ == '__main__':
-        thread1 = thread.start_new_thread(influxLooper(60), "InfluxThread")
-        thread2 = thread.start_new_thread(mongoLooper(600), "MongoThread")
 
+    threads = [
+        Thread(target=mongoLooper(600)),
+        Thread(target=influxLooper(60))
+    ]
+    for i in threads:
+        i.start()
