@@ -164,7 +164,7 @@ def insertUtilizationValues():
     for js in jsons:
         client.write_points(js)
 
-    writeServerDetails(client, now)
+    # writeServerDetails(client, now)
 
 
 def writeProcessValues(client, now):
@@ -176,32 +176,34 @@ def writeProcessValues(client, now):
             proc = psutil.Process(x)
             pname = proc.name()
             pmem = float("{0:.2f}".format(proc.memory_percent()))
-            pcpu = proc.cpu_percent()
+            pcpu = proc.cpu_times().system if proc.cpu_times().system != 0 else proc.cpu_percent()
 
-            json_body = [
-                {
-                    "measurement": "process_list",
-                    "tags": {
-                        "host": socket.gethostname(),
-                        'pName': pname,
-                    },
-                    "time": now.isoformat(),
-                    "fields": {
-                        'procId': x,
-                        'pMemory': pmem,
-                        'pCPU': pcpu
+            if 0 < pmem or (0 < pcpu < 100):
+                # print(pmem, " ", pcpu)
+                json_body = [
+                    {
+                        "measurement": "process_list",
+                        "tags": {
+                            "host": socket.gethostname(),
+                            'pName': pname,
+                        },
+                        "time": now.isoformat(),
+                        "fields": {
+                            'procId': x,
+                            'pMemory': pmem,
+                            'pCPU': pcpu
 
+                        }
                     }
-                }
-            ]
-
-            client.write_points(retention_policy="rp1", points=json_body)
+                ]
+                client.write_points(retention_policy="rp1", points=json_body)
 
         except psutil.NoSuchProcess:
             print('Process not found')
         except Exception:
             print('InfluxDB error')
             print(traceback.format_exc())
+
 
 def writeServerDetails(client, now):
     query = "SELECT * FROM RPI.autogen.server WHERE host =\'" + socket.gethostname() + "\' order by desc limit 1"
@@ -247,7 +249,7 @@ def getServerDetailsJson():
     for s in sensors:
         avgtemp += s
 
-    avgtemp = avgtemp/sensors.__len__()
+    avgtemp = avgtemp / sensors.__len__()
 
     obj_Disk = psutil.disk_usage('/')
     json_body = {"host": socket.gethostname(),
@@ -309,5 +311,6 @@ def looper(cycle):
         writeServerDetailsToMongoDB()
         time.sleep(cycle)
 
+
 if __name__ == '__main__':
-  Thread(target=looper(60)).start()
+    Thread(target=looper(60)).start()
